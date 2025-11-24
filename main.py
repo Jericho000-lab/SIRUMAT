@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+import gspread
 from datetime import datetime
 
 # Set page configuration
@@ -37,21 +38,76 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-def load_data(filepath):
-    if not os.path.exists(filepath):
-        return pd.DataFrame()
-    return pd.read_csv(filepath)
-
-def save_data(filepath, new_data):
-    if not os.path.exists(filepath):
-        new_data.to_csv(filepath, index=False)
-    else:
-        new_data.to_csv(filepath, mode='a', header=False, index=False)
-
 # Sidebar
 with st.sidebar:
     st.title("Menu")
     menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Humas"])
+    st.divider()
+    debug_mode = st.checkbox("Debug Mode")
+
+# Google Sheets Connection Helper
+def get_connection():
+    try:
+        # Try loading from Streamlit secrets first (for Cloud)
+        if "gcp_service_account" in st.secrets:
+            service_account_info = st.secrets["gcp_service_account"]
+            gc = gspread.service_account_from_dict(service_account_info)
+        # Fallback to local file (for local development)
+        elif os.path.exists('service_account.json'):
+            gc = gspread.service_account(filename='service_account.json')
+        else:
+            st.error("Missing Google Sheets credentials. Please configure secrets or add service_account.json.")
+            return None
+
+        try:
+            sh = gc.open("database_sirumat")
+        except gspread.SpreadsheetNotFound:
+            sh = gc.open("Database_SiRumat")
+        return sh
+    except Exception as e:
+        st.error(f"Error connecting to Google Sheets: {e}")
+        return None
+
+def load_data(sheet_name):
+    sh = get_connection()
+    if sh is None:
+        return pd.DataFrame()
+        
+    try:
+        worksheet = sh.worksheet(sheet_name)
+        data = worksheet.get_all_records()
+        return pd.DataFrame(data)
+    except gspread.WorksheetNotFound:
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading data from {sheet_name}: {e}")
+        return pd.DataFrame()
+
+import time
+
+def save_data(sheet_name, new_data):
+    if debug_mode:
+        st.write(f"DEBUG: Starting save to {sheet_name}...")
+        st.write(f"DEBUG: Data: {new_data.values.tolist()}")
+
+    sh = get_connection()
+    if sh is None:
+        if debug_mode: st.error("DEBUG: Connection failed (sh is None)")
+        return False
+
+    try:
+        worksheet = sh.worksheet(sheet_name)
+        if debug_mode: st.write(f"DEBUG: Worksheet '{sheet_name}' found. Appending row...")
+        
+        # Use append_row for single row insertion (safer/simpler)
+        worksheet.append_row(new_data.values.tolist()[0])
+        
+        if debug_mode: st.success("DEBUG: append_row completed successfully!")
+        return True
+    except Exception as e:
+        st.error(f"Error saving data to {sheet_name}: {e}")
+        if debug_mode: st.error(f"DEBUG: Exception details: {e}")
+        return False
 
 # Main content
 st.title("Si-Rumat")
@@ -60,9 +116,9 @@ if menu == "Beranda":
     st.header("Dashboard Statistik")
     
     # Load data for metrics
-    df_kerusakan = load_data("laporan_kerusakan.csv")
-    df_checklist = load_data("checklist_kebersihan.csv")
-    df_konten = load_data("rencana_konten.csv")
+    df_kerusakan = load_data("Laporan_Kerusakan")
+    df_checklist = load_data("Checklist_Kebersihan")
+    df_konten = load_data("Rencana_Konten")
 
     # Calculate metrics
     total_kerusakan = len(df_kerusakan) if not df_kerusakan.empty else 0
@@ -113,15 +169,17 @@ elif menu == "Kerumahtanggaan":
                         "Kendala": [kendala],
                         "Bukti Foto": [foto_path if foto_path else "-"]
                     })
-                    save_data("laporan_kerusakan.csv", data)
-                    st.success("Laporan berhasil dikirim!")
-                    st.rerun()
+                    if save_data("Laporan_Kerusakan", data):
+                        st.success("Laporan berhasil dikirim!")
+                        if not debug_mode:
+                            time.sleep(1)
+                            st.rerun()
                 else:
                     st.error("Mohon lengkapi semua field.")
         
         st.divider()
         st.subheader("Riwayat Laporan")
-        df_kerusakan = load_data("laporan_kerusakan.csv")
+        df_kerusakan = load_data("Laporan_Kerusakan")
         if not df_kerusakan.empty:
             st.dataframe(
                 df_kerusakan, 
@@ -168,15 +226,16 @@ elif menu == "Kerumahtanggaan":
                         "Kondisi": [kondisi],
                         "Bukti Foto": [foto_path if foto_path else "-"]
                     })
-                    save_data("checklist_kebersihan.csv", data)
-                    st.success("Checklist berhasil disimpan!")
-                    st.rerun()
+                    if save_data("Checklist_Kebersihan", data):
+                        st.success("Checklist berhasil disimpan!")
+                        time.sleep(1)
+                        st.rerun()
                 else:
                     st.error("Mohon isi nama petugas.")
         
         st.divider()
         st.subheader("Riwayat Checklist")
-        df_ppnpn = load_data("checklist_kebersihan.csv")
+        df_ppnpn = load_data("Checklist_Kebersihan")
         if not df_ppnpn.empty:
             st.dataframe(
                 df_ppnpn, 
@@ -217,20 +276,21 @@ elif menu == "Humas":
         if submitted_content:
             if caption and platform:
                 data = pd.DataFrame({
-                    "Tanggal": [tanggal],
+                    "Tanggal": [str(tanggal)], # Convert date to string for JSON serialization if needed, though gspread handles it
                     "Caption": [caption],
                     "Platform": [", ".join(platform)],
                     "Status": [status]
                 })
-                save_data("rencana_konten.csv", data)
-                st.success("Rencana konten berhasil disimpan!")
-                st.rerun()
+                if save_data("Rencana_Konten", data):
+                    st.success("Rencana konten berhasil disimpan!")
+                    time.sleep(1)
+                    st.rerun()
             else:
                 st.error("Mohon lengkapi caption dan platform.")
 
     st.divider()
     st.subheader("Daftar Rencana Konten")
-    df_content = load_data("rencana_konten.csv")
+    df_content = load_data("Rencana_Konten")
     if not df_content.empty:
         st.dataframe(df_content, use_container_width=True)
         
