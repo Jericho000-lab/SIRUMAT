@@ -303,10 +303,7 @@ elif menu == "Humas":
     else:
         st.info("Belum ada rencana konten.")
 
-elif menu == "Absensi PPNPN":
-    st.header("Absensi PPNPN")
-    
-elif menu == "Absensi PPNPN":
+
     st.header("Absensi PPNPN")
     
     # Removed st.form to allow immediate feedback from camera_input
