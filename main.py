@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import io
 import gspread
+import base64
 from datetime import datetime
 
 # Set page configuration
@@ -31,6 +32,21 @@ def save_uploaded_file(uploaded_file):
         f.write(uploaded_file.getbuffer())
     
     return filepath
+
+def get_image_data_url(file_path):
+    """Reads a local image file and returns a Base64 Data URI."""
+    if not file_path or file_path == "-" or not os.path.exists(file_path):
+        return None
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+        encoded = base64.b64encode(data).decode()
+        # Determine mime type based on extension
+        ext = os.path.splitext(file_path)[1].lower()
+        mime = "image/png" if ext == ".png" else "image/jpeg"
+        return f"data:{mime};base64,{encoded}"
+    except Exception:
+        return None
 
 def to_excel(df):
     output = io.BytesIO()
@@ -175,30 +191,27 @@ elif menu == "Kerumahtanggaan":
         st.subheader("Riwayat Laporan")
         df_kerusakan = load_data("Laporan_Kerusakan")
         if not df_kerusakan.empty:
+            # Prepare display dataframe with images
+            df_display = df_kerusakan.copy()
+            if "Bukti Foto" in df_display.columns:
+                df_display["Bukti Foto"] = df_display["Bukti Foto"].apply(get_image_data_url)
+
             st.dataframe(
-                df_kerusakan, 
+                df_display, 
                 use_container_width=True,
                 column_config={
-                    "Bukti Foto": st.column_config.TextColumn("Bukti Foto", help="Path file foto")
+                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Bukti Foto Laporan")
                 }
             )
-            # Optional: Display images in an expander if user wants to see them
-            with st.expander("Lihat Galeri Foto Kerusakan"):
-                if "Bukti Foto" in df_kerusakan.columns:
-                    cols = st.columns(4)
-                    for idx, row in df_kerusakan.iterrows():
-                        if row["Bukti Foto"] != "-" and os.path.exists(row["Bukti Foto"]):
-                            with cols[idx % 4]:
-                                st.image(row["Bukti Foto"], caption=f"{row['Lokasi']} - {row['Tanggal']}", use_container_width=True)
             
             st.download_button(
                 label="Download Excel",
                 data=to_excel(df_kerusakan),
-                file_name=f"Rekapan_Kerusakan_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                file_name=f"Laporan_Kerusakan_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.info("Belum ada laporan.")
+            st.info("Belum ada data laporan.")
 
     with tab2:
         st.subheader("Kontrol PPNPN")
@@ -229,28 +242,25 @@ elif menu == "Kerumahtanggaan":
         
         st.divider()
         st.subheader("Riwayat Checklist")
-        df_ppnpn = load_data("Checklist_Kebersihan")
-        if not df_ppnpn.empty:
+        df_checklist = load_data("Checklist_Kebersihan")
+        if not df_checklist.empty:
+            # Prepare display dataframe with images
+            df_display = df_checklist.copy()
+            if "Bukti Foto" in df_display.columns:
+                df_display["Bukti Foto"] = df_display["Bukti Foto"].apply(get_image_data_url)
+
             st.dataframe(
-                df_ppnpn, 
+                df_display, 
                 use_container_width=True,
                 column_config={
-                    "Bukti Foto": st.column_config.TextColumn("Bukti Foto", help="Path file foto")
+                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Bukti Foto Kebersihan")
                 }
             )
-             # Optional: Display images in an expander
-            with st.expander("Lihat Galeri Foto Kebersihan"):
-                if "Bukti Foto" in df_ppnpn.columns:
-                    cols = st.columns(4)
-                    for idx, row in df_ppnpn.iterrows():
-                        if row["Bukti Foto"] != "-" and os.path.exists(row["Bukti Foto"]):
-                            with cols[idx % 4]:
-                                st.image(row["Bukti Foto"], caption=f"{row['Area']} - {row['Tanggal']}", use_container_width=True)
             
             st.download_button(
                 label="Download Excel",
-                data=to_excel(df_ppnpn),
-                file_name=f"Rekapan_Kebersihan_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                data=to_excel(df_checklist),
+                file_name=f"Checklist_Kebersihan_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
@@ -311,22 +321,18 @@ elif menu == "Absensi PPNPN":
         df_today = df_absensi[df_absensi["Tanggal_Only"] == today_str].drop(columns=["Tanggal_Only"])
         
         if not df_today.empty:
+            # Prepare display dataframe with images
+            df_display = df_today.copy()
+            if "Bukti Foto" in df_display.columns:
+                df_display["Bukti Foto"] = df_display["Bukti Foto"].apply(get_image_data_url)
+
             st.dataframe(
-                df_today,
+                df_display,
                 use_container_width=True,
                 column_config={
-                    "Bukti Foto": st.column_config.TextColumn("Bukti Foto", help="Path file foto")
+                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Foto Selfie")
                 }
             )
-            
-            # Gallery for today
-            with st.expander("Lihat Foto Absensi Hari Ini"):
-                if "Bukti Foto" in df_today.columns:
-                    cols = st.columns(4)
-                    for idx, row in df_today.iterrows():
-                        if row["Bukti Foto"] != "-" and os.path.exists(row["Bukti Foto"]):
-                            with cols[idx % 4]:
-                                st.image(row["Bukti Foto"], caption=f"{row['Nama Pegawai']} - {row['Waktu']}", use_container_width=True)
         else:
             st.info("Belum ada data absensi hari ini.")
     else:
