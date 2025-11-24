@@ -41,7 +41,7 @@ def to_excel(df):
 # Sidebar
 with st.sidebar:
     st.title("Menu")
-    menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Humas"])
+    menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Humas", "Absensi PPNPN"])
     st.divider()
     debug_mode = st.checkbox("Debug Mode")
 
@@ -302,3 +302,72 @@ elif menu == "Humas":
         )
     else:
         st.info("Belum ada rencana konten.")
+
+elif menu == "Absensi PPNPN":
+    st.header("Absensi PPNPN")
+    
+    with st.form("form_absensi"):
+        c1, c2 = st.columns(2)
+        nama_pegawai = c1.selectbox("Nama Pegawai", ["Budi", "Siti", "Asep", "Dewi"])
+        status_kehadiran = c2.radio("Status", ["Hadir", "Izin", "Sakit"], horizontal=True)
+        keterangan = st.text_input("Keterangan (Opsional)")
+        
+        st.write("Bukti Kehadiran (Wajib Foto Selfie)")
+        foto_selfie = st.camera_input("Ambil Foto Selfie")
+        
+        submitted_absen = st.form_submit_button("Kirim Absen")
+        
+        if submitted_absen:
+            if foto_selfie:
+                foto_path = save_uploaded_file(foto_selfie)
+                waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                data = pd.DataFrame({
+                    "Waktu": [waktu_sekarang],
+                    "Nama Pegawai": [nama_pegawai],
+                    "Status": [status_kehadiran],
+                    "Keterangan": [keterangan if keterangan else "-"],
+                    "Bukti Foto": [foto_path]
+                })
+                
+                if save_data("Presensi_PPNPN", data):
+                    st.success(f"Absensi {nama_pegawai} berhasil dikirim!")
+                    if not debug_mode:
+                        time.sleep(1)
+                        st.rerun()
+            else:
+                st.error("Wajib mengambil foto selfie untuk absen!")
+
+    st.divider()
+    st.subheader("Riwayat Absensi Hari Ini")
+    
+    df_absensi = load_data("Presensi_PPNPN")
+    if not df_absensi.empty:
+        # Filter for today
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        # Ensure 'Waktu' column is treated as string/datetime for filtering
+        # Assuming format is YYYY-MM-DD HH:MM:SS
+        df_absensi["Tanggal_Only"] = df_absensi["Waktu"].astype(str).str.split(" ").str[0]
+        df_today = df_absensi[df_absensi["Tanggal_Only"] == today_str].drop(columns=["Tanggal_Only"])
+        
+        if not df_today.empty:
+            st.dataframe(
+                df_today,
+                use_container_width=True,
+                column_config={
+                    "Bukti Foto": st.column_config.TextColumn("Bukti Foto", help="Path file foto")
+                }
+            )
+            
+            # Gallery for today
+            with st.expander("Lihat Foto Absensi Hari Ini"):
+                if "Bukti Foto" in df_today.columns:
+                    cols = st.columns(4)
+                    for idx, row in df_today.iterrows():
+                        if row["Bukti Foto"] != "-" and os.path.exists(row["Bukti Foto"]):
+                            with cols[idx % 4]:
+                                st.image(row["Bukti Foto"], caption=f"{row['Nama Pegawai']} - {row['Waktu']}", use_container_width=True)
+        else:
+            st.info("Belum ada data absensi hari ini.")
+    else:
+        st.info("Belum ada data absensi.")
