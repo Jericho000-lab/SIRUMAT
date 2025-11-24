@@ -48,6 +48,32 @@ def get_image_data_url(file_path):
     except Exception:
         return None
 
+def generate_ticket_id():
+    """Generates a unique ticket ID based on timestamp."""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"TKT-{timestamp}"
+
+def update_ticket_status(ticket_id, new_status):
+    """Updates the status of a specific ticket in Laporan_Kerusakan."""
+    conn = get_connection()
+    if conn:
+        try:
+            ws = conn.worksheet("Laporan_Kerusakan")
+            # Find the cell with the ticket ID
+            cell = ws.find(ticket_id)
+            if cell:
+                # Status is in the column after Ticket ID (based on our upgrade script)
+                # But safer to find header index. For now, assuming it's the last column or we search for it.
+                # Let's find 'Status' column index
+                headers = ws.row_values(1)
+                if "Status" in headers:
+                    status_col = headers.index("Status") + 1
+                    ws.update_cell(cell.row, status_col, new_status)
+                    return True
+        except Exception as e:
+            st.error(f"Failed to update ticket status: {e}")
+    return False
+
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -170,16 +196,25 @@ elif menu == "Kerumahtanggaan":
 
             if submitted_kerusakan:
                 if nama_pelapor and lokasi and kendala:
-                    foto_path = save_uploaded_file(uploaded_foto)
+                    foto_path = "-"
+                    if uploaded_foto:
+                        foto_path = save_uploaded_file(uploaded_foto)
+                    
+                    waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    tiket_id = generate_ticket_id()
+                    
                     data = pd.DataFrame({
-                        "Tanggal": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+                        "Tanggal": [waktu_sekarang],
                         "Nama Pelapor": [nama_pelapor],
                         "Lokasi": [lokasi],
                         "Kendala": [kendala],
-                        "Bukti Foto": [foto_path if foto_path else "-"]
+                        "Bukti Foto": [foto_path],
+                        "Tiket ID": [tiket_id],
+                        "Status": ["Pending"]
                     })
+                    
                     if save_data("Laporan_Kerusakan", data):
-                        st.success("Laporan berhasil dikirim!")
+                        st.success(f"Laporan berhasil dikirim! Tiket ID: {tiket_id}")
                         if not debug_mode:
                             time.sleep(1)
                             st.rerun()
@@ -199,7 +234,13 @@ elif menu == "Kerumahtanggaan":
                 df_display, 
                 use_container_width=True,
                 column_config={
-                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Bukti Foto Laporan")
+                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Bukti Foto Laporan"),
+                    "Status": st.column_config.SelectboxColumn(
+                        "Status",
+                        options=["Pending", "Selesai"],
+                        help="Status Pengerjaan",
+                        disabled=True # Read-only in this view
+                    )
                 }
             )
             
@@ -214,14 +255,31 @@ elif menu == "Kerumahtanggaan":
 
     with tab2:
         st.subheader("Laporan Perbaikan")
+        
+        # Load Pending Tickets
+        df_kerusakan = load_data("Laporan_Kerusakan")
+        pending_tickets = []
+        if not df_kerusakan.empty and "Status" in df_kerusakan.columns:
+            pending_tickets = df_kerusakan[df_kerusakan["Status"] == "Pending"]["Tiket ID"].tolist()
+        
+        selected_ticket = st.selectbox("Pilih Tiket Kerusakan (Pending)", ["Non-Tiket (Manual)"] + pending_tickets)
+        
         with st.form("form_perbaikan"):
             c1, c2 = st.columns(2)
             nama_teknisi = c1.text_input("Nama Teknisi")
-            lokasi_perbaikan = c2.text_input("Lokasi Perbaikan")
+            
+            # Auto-fill location if ticket selected
+            default_lokasi = ""
+            if selected_ticket != "Non-Tiket (Manual)" and not df_kerusakan.empty:
+                ticket_row = df_kerusakan[df_kerusakan["Tiket ID"] == selected_ticket]
+                if not ticket_row.empty:
+                    default_lokasi = ticket_row.iloc[0]["Lokasi"]
+            
+            lokasi_perbaikan = c2.text_input("Lokasi Perbaikan", value=default_lokasi)
             tindakan = st.text_area("Tindakan Perbaikan")
             bukti_foto_perbaikan = st.file_uploader("Upload Foto Perbaikan", type=["png", "jpg", "jpeg"])
             
-            submitted_perbaikan = st.form_submit_button("Simpan Laporan Perbaikan")
+            submitted_perbaikan = st.form_submit_button("Simpan & Selesaikan Tiket")
             
             if submitted_perbaikan:
                 if nama_teknisi and lokasi_perbaikan and tindakan:
@@ -235,11 +293,18 @@ elif menu == "Kerumahtanggaan":
                         "Nama Teknisi": [nama_teknisi],
                         "Lokasi": [lokasi_perbaikan],
                         "Tindakan Perbaikan": [tindakan],
-                        "Bukti Foto": [foto_path]
+                        "Bukti Foto": [foto_path],
+                        "Tiket ID": [selected_ticket if selected_ticket != "Non-Tiket (Manual)" else "-"]
                     })
                     
                     if save_data("Laporan_Perbaikan", data):
-                        st.success("Laporan perbaikan berhasil disimpan!")
+                        # Update status if it's a ticket
+                        if selected_ticket != "Non-Tiket (Manual)":
+                            update_ticket_status(selected_ticket, "Selesai")
+                            st.success(f"Laporan perbaikan disimpan dan Tiket {selected_ticket} ditandai Selesai!")
+                        else:
+                            st.success("Laporan perbaikan berhasil disimpan!")
+                            
                         if not debug_mode:
                             time.sleep(1)
                             st.rerun()
