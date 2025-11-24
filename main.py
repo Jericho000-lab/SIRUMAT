@@ -133,17 +133,16 @@ if menu == "Beranda":
     
     # Load data for metrics
     df_kerusakan = load_data("Laporan_Kerusakan")
-    df_checklist = load_data("Checklist_Kebersihan")
-    df_konten = load_data("Rencana_Konten")
+    df_perbaikan = load_data("Laporan_Perbaikan")
 
     # Calculate metrics
     total_kerusakan = len(df_kerusakan) if not df_kerusakan.empty else 0
-    total_checklist = len(df_checklist) if not df_checklist.empty else 0
+    total_perbaikan = len(df_perbaikan) if not df_perbaikan.empty else 0
 
     # Display metrics
     col1, col2 = st.columns(2)
     col1.metric("Total Laporan Kerusakan", total_kerusakan)
-    col2.metric("Total Checklist Kebersihan", total_checklist)
+    col2.metric("Total Perbaikan Selesai", total_perbaikan)
 
     st.divider()
 
@@ -157,7 +156,7 @@ if menu == "Beranda":
 
 elif menu == "Kerumahtanggaan":
     st.header("Kerumahtanggaan")
-    tab1, tab2 = st.tabs(["Laporan Kerusakan", "Kontrol PPNPN"])
+    tab1, tab2 = st.tabs(["Laporan Kerusakan", "Laporan Perbaikan"])
 
     with tab1:
         st.subheader("Laporan Kerusakan")
@@ -214,38 +213,45 @@ elif menu == "Kerumahtanggaan":
             st.info("Belum ada data laporan.")
 
     with tab2:
-        st.subheader("Kontrol PPNPN")
-        with st.form("form_ppnpn"):
+        st.subheader("Laporan Perbaikan")
+        with st.form("form_perbaikan"):
             c1, c2 = st.columns(2)
-            nama_petugas = c1.text_input("Nama Petugas")
-            area = c2.selectbox("Area", ["Lobby", "Ruang Rapat", "Toilet", "Pantry", "Halaman"])
-            kondisi = st.radio("Kondisi", ["Bersih", "Kotor"])
-            uploaded_foto_ppnpn = st.file_uploader("Upload Bukti Foto", type=['png', 'jpg', 'jpeg'])
-            submitted_ppnpn = st.form_submit_button("Simpan Checklist")
-
-            if submitted_ppnpn:
-                if nama_petugas:
-                    foto_path = save_uploaded_file(uploaded_foto_ppnpn)
+            nama_teknisi = c1.text_input("Nama Teknisi")
+            lokasi_perbaikan = c2.text_input("Lokasi Perbaikan")
+            tindakan = st.text_area("Tindakan Perbaikan")
+            bukti_foto_perbaikan = st.file_uploader("Upload Foto Perbaikan", type=["png", "jpg", "jpeg"])
+            
+            submitted_perbaikan = st.form_submit_button("Simpan Laporan Perbaikan")
+            
+            if submitted_perbaikan:
+                if nama_teknisi and lokasi_perbaikan and tindakan:
+                    foto_path = "-"
+                    if bukti_foto_perbaikan:
+                        foto_path = save_uploaded_file(bukti_foto_perbaikan)
+                    
+                    waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     data = pd.DataFrame({
-                        "Tanggal": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
-                        "Nama Petugas": [nama_petugas],
-                        "Area": [area],
-                        "Kondisi": [kondisi],
-                        "Bukti Foto": [foto_path if foto_path else "-"]
+                        "Tanggal": [waktu_sekarang],
+                        "Nama Teknisi": [nama_teknisi],
+                        "Lokasi": [lokasi_perbaikan],
+                        "Tindakan Perbaikan": [tindakan],
+                        "Bukti Foto": [foto_path]
                     })
-                    if save_data("Checklist_Kebersihan", data):
-                        st.success("Checklist berhasil disimpan!")
-                        time.sleep(1)
-                        st.rerun()
+                    
+                    if save_data("Laporan_Perbaikan", data):
+                        st.success("Laporan perbaikan berhasil disimpan!")
+                        if not debug_mode:
+                            time.sleep(1)
+                            st.rerun()
                 else:
-                    st.error("Mohon isi nama petugas.")
+                    st.error("Mohon lengkapi semua field.")
         
         st.divider()
-        st.subheader("Riwayat Checklist")
-        df_checklist = load_data("Checklist_Kebersihan")
-        if not df_checklist.empty:
+        st.subheader("Riwayat Perbaikan")
+        df_perbaikan = load_data("Laporan_Perbaikan")
+        if not df_perbaikan.empty:
             # Prepare display dataframe with images
-            df_display = df_checklist.copy()
+            df_display = df_perbaikan.copy()
             if "Bukti Foto" in df_display.columns:
                 df_display["Bukti Foto"] = df_display["Bukti Foto"].apply(get_image_data_url)
 
@@ -253,18 +259,18 @@ elif menu == "Kerumahtanggaan":
                 df_display, 
                 use_container_width=True,
                 column_config={
-                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Bukti Foto Kebersihan")
+                    "Bukti Foto": st.column_config.ImageColumn("Bukti Foto", help="Bukti Foto Perbaikan")
                 }
             )
             
             st.download_button(
                 label="Download Excel",
-                data=to_excel(df_checklist),
-                file_name=f"Checklist_Kebersihan_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                data=to_excel(df_perbaikan),
+                file_name=f"Laporan_Perbaikan_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.info("Belum ada data checklist.")
+            st.info("Belum ada data perbaikan.")
 
 
 
