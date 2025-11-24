@@ -306,37 +306,44 @@ elif menu == "Humas":
 elif menu == "Absensi PPNPN":
     st.header("Absensi PPNPN")
     
-    with st.form("form_absensi"):
-        c1, c2 = st.columns(2)
-        nama_pegawai = c1.selectbox("Nama Pegawai", ["Budi", "Siti", "Asep", "Dewi"])
-        status_kehadiran = c2.radio("Status", ["Hadir", "Izin", "Sakit"], horizontal=True)
-        keterangan = st.text_input("Keterangan (Opsional)")
-        
-        st.write("Bukti Kehadiran (Wajib Foto Selfie)")
-        foto_selfie = st.camera_input("Ambil Foto Selfie")
-        
-        submitted_absen = st.form_submit_button("Kirim Absen")
-        
-        if submitted_absen:
-            if foto_selfie:
-                foto_path = save_uploaded_file(foto_selfie)
-                waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                data = pd.DataFrame({
-                    "Waktu": [waktu_sekarang],
-                    "Nama Pegawai": [nama_pegawai],
-                    "Status": [status_kehadiran],
-                    "Keterangan": [keterangan if keterangan else "-"],
-                    "Bukti Foto": [foto_path]
-                })
-                
-                if save_data("Presensi_PPNPN", data):
-                    st.success(f"Absensi {nama_pegawai} berhasil dikirim!")
-                    if not debug_mode:
-                        time.sleep(1)
-                        st.rerun()
-            else:
-                st.error("Wajib mengambil foto selfie untuk absen!")
+elif menu == "Absensi PPNPN":
+    st.header("Absensi PPNPN")
+    
+    # Removed st.form to allow immediate feedback from camera_input
+    c1, c2 = st.columns(2)
+    nama_pegawai = c1.selectbox("Nama Pegawai", ["Budi", "Siti", "Asep", "Dewi"])
+    status_kehadiran = c2.radio("Status", ["Hadir", "Izin", "Sakit"], horizontal=True)
+    keterangan = st.text_input("Keterangan (Opsional)")
+    
+    st.write("Bukti Kehadiran (Wajib Foto Selfie)")
+    # Camera input triggers a rerun when photo is taken
+    foto_selfie = st.camera_input("Ambil Foto Selfie")
+    
+    if foto_selfie:
+        st.success("Foto berhasil diambil!")
+    
+    submitted_absen = st.button("Kirim Absen")
+    
+    if submitted_absen:
+        if foto_selfie:
+            foto_path = save_uploaded_file(foto_selfie)
+            waktu_sekarang = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            data = pd.DataFrame({
+                "Waktu": [waktu_sekarang],
+                "Nama Pegawai": [nama_pegawai],
+                "Status": [status_kehadiran],
+                "Keterangan": [keterangan if keterangan else "-"],
+                "Bukti Foto": [foto_path]
+            })
+            
+            if save_data("Presensi_PPNPN", data):
+                st.success(f"Absensi {nama_pegawai} berhasil dikirim!")
+                if not debug_mode:
+                    time.sleep(1)
+                    st.rerun()
+        else:
+            st.error("Wajib mengambil foto selfie untuk absen! Pastikan Anda menekan tombol 'Take Photo'.")
 
     st.divider()
     st.subheader("Riwayat Absensi Hari Ini")
