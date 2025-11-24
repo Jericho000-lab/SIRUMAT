@@ -83,7 +83,7 @@ def to_excel(df):
 # Sidebar
 with st.sidebar:
     st.title("Menu")
-    menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Absensi PPNPN"])
+    menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Manajemen Inventaris", "Absensi PPNPN"])
     st.divider()
     debug_mode = st.checkbox("Debug Mode")
 
@@ -339,6 +339,234 @@ elif menu == "Kerumahtanggaan":
 
 
 
+
+elif menu == "Manajemen Inventaris":
+    st.header("Manajemen Inventaris (OfficeOps)")
+    
+    tab1, tab2 = st.tabs(["Stok Barang", "Update Stok"])
+    
+    with tab1:
+        st.subheader("Daftar Stok Barang")
+        df_inventaris = load_data("Inventaris_Barang")
+        
+        if not df_inventaris.empty:
+            # Convert numeric columns
+            if "Stok" in df_inventaris.columns:
+                df_inventaris["Stok"] = pd.to_numeric(df_inventaris["Stok"], errors='coerce').fillna(0)
+            if "Min Stok" in df_inventaris.columns:
+                df_inventaris["Min Stok"] = pd.to_numeric(df_inventaris["Min Stok"], errors='coerce').fillna(0)
+            
+            # Styling function
+            def highlight_stock(row):
+                try:
+                    stok = float(row["Stok"])
+                    min_stok = float(row["Min Stok"])
+                    if stok == 0:
+                        return ['background-color: #ffcccc'] * len(row) # Red
+                    elif stok <= min_stok:
+                        return ['background-color: #fff4cc'] * len(row) # Yellow
+                    else:
+                        return ['background-color: #ccffcc'] * len(row) # Green
+                except:
+                    return [''] * len(row)
+
+            st.dataframe(
+                df_inventaris.style.apply(highlight_stock, axis=1),
+                use_container_width=True
+            )
+            
+            # Alert for low stock
+            low_stock = df_inventaris[df_inventaris["Stok"] <= df_inventaris["Min Stok"]]
+            if not low_stock.empty:
+                st.warning(f"PERINGATAN: {len(low_stock)} barang stok menipis/habis!")
+                for _, row in low_stock.iterrows():
+                    st.write(f"- **{row['Nama Barang']}**: Sisa {row['Stok']} {row['Satuan']}")
+        else:
+            st.info("Belum ada data inventaris.")
+
+    with tab2:
+        st.subheader("Update / Tambah Barang")
+        
+        action = st.radio("Aksi", ["Update Stok", "Tambah Barang Baru"], horizontal=True)
+        
+        if action == "Update Stok":
+            df_inventaris = load_data("Inventaris_Barang")
+            if not df_inventaris.empty:
+                barang_list = df_inventaris["Nama Barang"].tolist()
+                selected_barang = st.selectbox("Pilih Barang", barang_list)
+                
+                # Get current info
+                current_row = df_inventaris[df_inventaris["Nama Barang"] == selected_barang].iloc[0]
+                st.info(f"Stok Saat Ini: {current_row['Stok']} {current_row['Satuan']}")
+                
+                update_type = st.radio("Jenis Update", ["Tambah (+)", "Kurang (-)"], horizontal=True)
+                jumlah = st.number_input("Jumlah", min_value=1, value=1)
+                
+                if st.button("Simpan Update"):
+                    # Logic to update specific cell would be ideal, but for now we append a new row? 
+                    # No, for inventory we must UPDATE the existing row.
+                    # Since our save_data appends, we need a new helper or modify logic.
+                    # For simplicity in this iteration: We will read all, modify, and OVERWRITE the sheet?
+                    # Overwriting is risky with concurrent users.
+                    # Better: Use a specific update function using gspread's cell update.
+                    
+                    # Let's implement a direct update here for now
+                    conn = get_connection()
+                    if conn:
+                        try:
+                            ws = conn.worksheet("Inventaris_Barang")
+                            cell = ws.find(selected_barang)
+                            if cell:
+                                # Stok is col 3
+                                current_stok = int(current_row['Stok'])
+                                new_stok = current_stok + jumlah if update_type == "Tambah (+)" else current_stok - jumlah
+                                if new_stok < 0:
+                                    st.error("Stok tidak bisa negatif!")
+                                else:
+                                    ws.update_cell(cell.row, 3, new_stok)
+                                    ws.update_cell(cell.row, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S")) # Update timestamp
+                                    st.success(f"Stok {selected_barang} berhasil diupdate menjadi {new_stok}!")
+                                    time.sleep(1)
+                                    st.rerun()
+                        except Exception as e:
+                            st.error(f"Gagal update: {e}")
+            else:
+                st.warning("Data kosong.")
+                
+        elif action == "Tambah Barang Baru":
+            with st.form("form_barang_baru"):
+                nama_barang = st.text_input("Nama Barang")
+                kategori = st.selectbox("Kategori", ["Kebersihan", "ATK", "Pantry", "Lainnya"])
+                stok_awal = st.number_input("Stok Awal", min_value=0)
+                satuan = st.text_input("Satuan (misal: Botol, Pack)")
+                min_stok = st.number_input("Minimum Stok (Alert)", min_value=1)
+                
+                if st.form_submit_button("Simpan Barang Baru"):
+                    if nama_barang and satuan:
+                        data = pd.DataFrame({
+                            "Nama Barang": [nama_barang],
+                            "Kategori": [kategori],
+                            "Stok": [stok_awal],
+                            "Satuan": [satuan],
+                            "Min Stok": [min_stok],
+                            "Terakhir Update": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                        })
+                        if save_data("Inventaris_Barang", data):
+                            st.success("Barang baru berhasil ditambahkan!")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        st.error("Nama barang dan satuan wajib diisi.")
+
+elif menu == "Manajemen Inventaris":
+    st.header("Manajemen Inventaris (OfficeOps)")
+    
+    tab1, tab2 = st.tabs(["Stok Barang", "Update Stok"])
+    
+    with tab1:
+        st.subheader("Daftar Stok Barang")
+        df_inventaris = load_data("Inventaris_Barang")
+        
+        if not df_inventaris.empty:
+            # Convert numeric columns
+            if "Stok" in df_inventaris.columns:
+                df_inventaris["Stok"] = pd.to_numeric(df_inventaris["Stok"], errors='coerce').fillna(0)
+            if "Min Stok" in df_inventaris.columns:
+                df_inventaris["Min Stok"] = pd.to_numeric(df_inventaris["Min Stok"], errors='coerce').fillna(0)
+            
+            # Styling function
+            def highlight_stock(row):
+                try:
+                    stok = float(row["Stok"])
+                    min_stok = float(row["Min Stok"])
+                    if stok == 0:
+                        return ['background-color: #ffcccc'] * len(row) # Red
+                    elif stok <= min_stok:
+                        return ['background-color: #fff4cc'] * len(row) # Yellow
+                    else:
+                        return ['background-color: #ccffcc'] * len(row) # Green
+                except:
+                    return [''] * len(row)
+
+            st.dataframe(
+                df_inventaris.style.apply(highlight_stock, axis=1),
+                use_container_width=True
+            )
+            
+            # Alert for low stock
+            low_stock = df_inventaris[df_inventaris["Stok"] <= df_inventaris["Min Stok"]]
+            if not low_stock.empty:
+                st.warning(f"PERINGATAN: {len(low_stock)} barang stok menipis/habis!")
+                for _, row in low_stock.iterrows():
+                    st.write(f"- **{row['Nama Barang']}**: Sisa {row['Stok']} {row['Satuan']}")
+        else:
+            st.info("Belum ada data inventaris.")
+
+    with tab2:
+        st.subheader("Update / Tambah Barang")
+        
+        action = st.radio("Aksi", ["Update Stok", "Tambah Barang Baru"], horizontal=True)
+        
+        if action == "Update Stok":
+            df_inventaris = load_data("Inventaris_Barang")
+            if not df_inventaris.empty:
+                barang_list = df_inventaris["Nama Barang"].tolist()
+                selected_barang = st.selectbox("Pilih Barang", barang_list)
+                
+                # Get current info
+                current_row = df_inventaris[df_inventaris["Nama Barang"] == selected_barang].iloc[0]
+                st.info(f"Stok Saat Ini: {current_row['Stok']} {current_row['Satuan']}")
+                
+                update_type = st.radio("Jenis Update", ["Tambah (+)", "Kurang (-)"], horizontal=True)
+                jumlah = st.number_input("Jumlah", min_value=1, value=1)
+                
+                if st.button("Simpan Update"):
+                    conn = get_connection()
+                    if conn:
+                        try:
+                            ws = conn.worksheet("Inventaris_Barang")
+                            cell = ws.find(selected_barang)
+                            if cell:
+                                # Stok is col 3
+                                current_stok = int(current_row['Stok'])
+                                new_stok = current_stok + jumlah if update_type == "Tambah (+)" else current_stok - jumlah
+                                if new_stok < 0:
+                                    st.error("Stok tidak bisa negatif!")
+                                else:
+                                    ws.update_cell(cell.row, 3, new_stok)
+                                    ws.update_cell(cell.row, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S")) # Update timestamp
+                                    st.success(f"Stok {selected_barang} berhasil diupdate menjadi {new_stok}!")
+                                    time.sleep(1)
+                                    st.rerun()
+                        except Exception as e:
+                            st.error(f"Gagal update: {e}")
+            else:
+                st.warning("Data kosong.")
+                
+        elif action == "Tambah Barang Baru":
+            with st.form("form_barang_baru"):
+                nama_barang = st.text_input("Nama Barang")
+                kategori = st.selectbox("Kategori", ["Kebersihan", "ATK", "Pantry", "Lainnya"])
+                stok_awal = st.number_input("Stok Awal", min_value=0)
+                satuan = st.text_input("Satuan (misal: Botol, Pack)")
+                min_stok = st.number_input("Minimum Stok (Alert)", min_value=1)
+                
+                if st.form_submit_button("Simpan Barang Baru"):
+                    if nama_barang and satuan:
+                        data = pd.DataFrame({
+                            "Nama Barang": [nama_barang],
+                            "Kategori": [kategori],
+                            "Stok": [stok_awal],
+                            "Satuan": [satuan],
+                            "Min Stok": [min_stok],
+                            "Terakhir Update": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                        })
+                        if save_data("Inventaris_Barang", data):
+                            st.success("Barang baru berhasil ditambahkan!")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        st.error("Nama barang dan satuan wajib diisi.")
 
 elif menu == "Absensi PPNPN":
     st.header("Absensi PPNPN")
