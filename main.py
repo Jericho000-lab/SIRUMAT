@@ -41,7 +41,7 @@ def to_excel(df):
 # Sidebar
 with st.sidebar:
     st.title("Menu")
-    menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Humas", "Absensi PPNPN"])
+    menu = st.radio("Pilih Menu", ["Beranda", "Kerumahtanggaan", "Absensi PPNPN"])
     st.divider()
     debug_mode = st.checkbox("Debug Mode")
 
@@ -123,17 +123,11 @@ if menu == "Beranda":
     # Calculate metrics
     total_kerusakan = len(df_kerusakan) if not df_kerusakan.empty else 0
     total_checklist = len(df_checklist) if not df_checklist.empty else 0
-    
-    if not df_konten.empty and "Status" in df_konten.columns:
-        total_ide = len(df_konten[df_konten["Status"] == "Ide"])
-    else:
-        total_ide = 0
 
     # Display metrics
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     col1.metric("Total Laporan Kerusakan", total_kerusakan)
     col2.metric("Total Checklist Kebersihan", total_checklist)
-    col3.metric("Rencana Konten 'Ide'", total_ide)
 
     st.divider()
 
@@ -262,46 +256,7 @@ elif menu == "Kerumahtanggaan":
         else:
             st.info("Belum ada data checklist.")
 
-elif menu == "Humas":
-    st.header("Humas - Content Planner")
-    with st.form("form_content"):
-        c1, c2 = st.columns(2)
-        tanggal = c1.date_input("Tanggal Posting")
-        status = c2.selectbox("Status", ["Ide", "Draft", "Siap Post", "Sudah Post"])
-        platform = st.multiselect("Platform", ["Instagram", "TikTok", "Website", "Facebook"])
-        caption = st.text_area("Rencana Caption")
-        
-        submitted_content = st.form_submit_button("Simpan Rencana")
 
-        if submitted_content:
-            if caption and platform:
-                data = pd.DataFrame({
-                    "Tanggal": [str(tanggal)], # Convert date to string for JSON serialization if needed, though gspread handles it
-                    "Caption": [caption],
-                    "Platform": [", ".join(platform)],
-                    "Status": [status]
-                })
-                if save_data("Rencana_Konten", data):
-                    st.success("Rencana konten berhasil disimpan!")
-                    time.sleep(1)
-                    st.rerun()
-            else:
-                st.error("Mohon lengkapi caption dan platform.")
-
-    st.divider()
-    st.subheader("Daftar Rencana Konten")
-    df_content = load_data("Rencana_Konten")
-    if not df_content.empty:
-        st.dataframe(df_content, use_container_width=True)
-        
-        st.download_button(
-            label="Download Excel",
-            data=to_excel(df_content),
-            file_name=f"Rencana_Konten_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("Belum ada rencana konten.")
 
 
 elif menu == "Absensi PPNPN":
